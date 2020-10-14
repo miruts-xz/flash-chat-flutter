@@ -66,9 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: StreamBuilder(
+        child: StreamBuilder<QuerySnapshot>(
             stream: chats,
-            builder: (context, snapshot) {
+            builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
               if (!snapshot.hasData) {
                 return Center(
                   child: CircularProgressIndicator(
@@ -76,8 +76,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               }
-              if(snapshot.hasError){
-                return Text('Something went wrong, check your internet connection');
+              if (snapshot.hasError) {
+                return Text(
+                    'Something went wrong, check your internet connection');
               }
               List<String> chatFriends =
                   snapshot.data.docs.reversed.map((doc) => doc.id).toList();

@@ -309,7 +309,7 @@ class MessageBubble extends StatelessWidget {
                         snapshot.data.difference(timestamp.toDate()).inMinutes;
                     return Text(
                       hours > 23
-                          ? '${DateFormat.yMMMd().format(timestamp.toDate())}'
+                          ? '${DateFormat.MMMd().add_jm().format(timestamp.toDate())}'
                           : hours > 0
                               ? '${hours}h ago'
                               : minutes > 0
@@ -370,14 +370,12 @@ class MessageBubble extends StatelessWidget {
                         snapshot.data.difference(timestamp.toDate()).inMinutes;
                     return Text(
                       hours > 23
-                          ? '${hours % 24}'
+                          ? '${DateFormat.MMMd().add_jm().format(timestamp.toDate())}'
                           : hours > 0
                               ? '${hours}h ago'
-                              : minutes > 59
-                                  ? '${minutes % 60}'
-                                  : minutes > 0
-                                      ? '${minutes}m ago'
-                                      : 'Just now',
+                              : minutes > 0
+                                  ? '${minutes}m ago'
+                                  : 'Just now',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Color(0xff9DA5B4),
