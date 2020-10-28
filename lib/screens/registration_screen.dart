@@ -132,16 +132,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     final newUser = await _auth.createUserWithEmailAndPassword(
                         email: email.trim(), password: password);
                     if (newUser != null) {
-                      fs
-                          .collection('users')
-                          .doc('${newUser.user.uid}')
-                          .set({'name': username.trim(), 'email': email});
+                      newUser.user.updateProfile(displayName: username.trim());
+                      fs.collection('users').doc('${newUser.user.uid}').set(
+                          {'displayName': username.trim(), 'email': email, 'uid': newUser.user.uid});
                       Navigator.pushNamed(context, HomeScreen.id);
                     }
                     setState(() {
                       showSpinner = false;
                     });
-                  } on ArgumentError catch (e) {
+                  } on ArgumentError {
                     setState(() {
                       if (username == null) {
                         usernameError = "Full name is required*";
@@ -224,25 +223,5 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     setState(() {
       genericError = null;
     });
-  }
-
-  bool validateCharacters(String username) {
-    List<String> invalids = [" ", "*", "-", "+", "\$", "%", "^", "&"];
-    bool valid = true;
-    for (var c in invalids) {
-      if (username.contains(c)) {
-        valid = false;
-      }
-    }
-    return valid;
-  }
-
-  Future<bool> uniqueUsername(String username) async {
-    final users =
-        await fs.collection('users').where('name', isEqualTo: username).get();
-    if (users.size > 0) {
-      return false;
-    }
-    return true;
   }
 }

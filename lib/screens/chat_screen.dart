@@ -1,13 +1,21 @@
+import 'dart:async';
+import 'dart:collection';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flash_chat/%20models/custom_user.dart';
+import 'package:flash_chat/components/custom_sliver_appbar.dart';
+import 'package:flash_chat/components/custom_sliver_list.dart';
+import 'package:flash_chat/components/message_bubble.dart';
+import 'package:flash_chat/components/message_composer.dart';
 import 'package:flash_chat/constants.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:true_time/true_time.dart';
 
 final fs = FirebaseFirestore.instance;
 final auth = FirebaseAuth.instance;
-User loggedInUser;
 MaterialColor _meColorcs;
 MaterialColor _anotherColorcs;
 
@@ -15,26 +23,28 @@ class ChatScreen extends StatefulWidget {
   static const String id = 'chat_screen';
   final MaterialColor meColor;
   final MaterialColor anotherColor;
-  final String uid;
-  final String friendUsername;
+  final CustomUser selectedUser;
 
-  ChatScreen(
-      {Key key, this.uid, this.friendUsername, this.meColor, this.anotherColor})
-      : super(key: key);
+  ChatScreen({this.selectedUser, this.meColor, this.anotherColor});
 
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   TextEditingController messageTextController = TextEditingController();
   CollectionReference chatMessages;
+  final loggedInUser = auth.currentUser;
+  List<DocumentSnapshot> messages = [];
+  List<DocumentSnapshot> reversedList = [];
+  final ScrollController scrollController = ScrollController();
+  StreamSubscription<QuerySnapshot> subscription;
 
   @override
   void initState() {
     super.initState();
     _initPlatformState();
-    _getCurrentUser();
+    _getChatMessages();
     _anotherColorcs = widget.anotherColor;
     _meColorcs = widget.meColor;
   }
@@ -47,21 +57,10 @@ class _ChatScreenState extends State<ChatScreen> {
     return await TrueTime.now();
   }
 
-  void _getCurrentUser() {
-    try {
-      final User user = auth.currentUser;
-      if (user != null) {
-        loggedInUser = user;
-      }
-    } catch (e) {
-      print(e);
-    }
-  }
-
-  Future<CollectionReference> _getChatMessages() async {
+  Future<void> _getChatMessages() async {
     final friendChats = await fs
         .collection('messages')
-        .doc('${widget.uid}')
+        .doc('${widget.selectedUser.uid}')
         .collection('${auth.currentUser.uid}')
         .doc('chats')
         .collection('chats')
@@ -69,7 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (friendChats.size > 0) {
       chatMessages = fs
           .collection('messages')
-          .doc(widget.uid)
+          .doc(widget.selectedUser.uid)
           .collection(loggedInUser.uid)
           .doc('chats')
           .collection('chats');
@@ -77,350 +76,141 @@ class _ChatScreenState extends State<ChatScreen> {
       chatMessages = fs
           .collection('messages')
           .doc(loggedInUser.uid)
-          .collection('${widget.uid}')
+          .collection('${widget.selectedUser.uid}')
           .doc('chats')
           .collection('chats');
     }
-    return chatMessages;
+    subscription =
+        chatMessages.orderBy('timestamp').snapshots().listen(queryHandler);
+  }
+
+  void queryHandler(QuerySnapshot snapshot) {
+    snapshot.docChanges.forEach((element) {
+      messages.add(element.doc);
+    });
+    setState(() {
+      reversedList = messages.reversed.toList();
+    });
+  }
+
+  void _onSendCallback(String message) async {
+    chatMessages.add({
+      'text': message,
+      'sender': loggedInUser?.uid,
+      'timestamp': Timestamp.fromDate(await _getCurrentTime()),
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        backgroundColor: Color(0xffF3F6FB),
-        appBar: PreferredSize(
-          preferredSize: Size(double.infinity, 100.0),
-          child: Container(
-            decoration: BoxDecoration(color: Colors.blue),
-            padding: EdgeInsets.only(
-              left: 16.0,
-              top: 8.0,
-              bottom: 8.0,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {},
-                      child: Icon(
-                        Icons.account_circle,
-                        color: Colors.white,
-                        size: 50.0,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 10.0,
-                    ),
-                    Text(
-                      widget.friendUsername,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 24.0,
-                          color: Colors.white),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.close,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
+    return Scaffold(
+      backgroundColor: Color(0xffF3F6FB),
+      body: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: NestedScrollView(
+                controller: scrollController,
+                floatHeaderSlivers: true,
+                headerSliverBuilder: (context, scroll) {
+                  return [buildSliverAppBar(context)];
+                },
+                body: ListView.builder(
+                  itemBuilder: (context, index) {
+                    return buildMessageBubble(reversedList[index]);
                   },
+                  itemCount: reversedList.length,
+                  // reverse: true,
                 ),
-              ],
-            ),
-          ),
-        ),
-        body: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              MessagesStream(
-                uid: widget.uid,
-                future: _getChatMessages,
-                friendUsername: widget.friendUsername,
               ),
-              Container(
-                decoration: kMessageContainerDecoration,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    Expanded(
-                      child: TextField(
-                        controller: messageTextController,
-                        decoration: kMessageTextFieldDecoration,
-                      ),
-                    ),
-                    FlatButton(
-                      onPressed: () async {
-                        if (messageTextController.text != null &&
-                            messageTextController.text != "") {
-                          chatMessages.add({
-                            'text': messageTextController.text,
-                            'sender': loggedInUser?.email,
-                            'timestamp':
-                                Timestamp.fromDate(await _getCurrentTime()),
-                          });
-                          messageTextController.clear();
-                        }
-                      },
-                      child: Text(
-                        'Send',
-                        style: kSendButtonTextStyle,
-                      ),
-                    ),
+            ),
+/*            Expanded(
+              child: Container(
+                child: CustomScrollView(
+                  controller: scrollController,
+                  slivers: [
+                    buildSliverAppBar(context),
+                    buildSliverList(messages),
                   ],
                 ),
               ),
-            ],
-          ),
+            )*/
+            MessageComposer(onSendPressed: _onSendCallback),
+          ],
         ),
       ),
     );
   }
-}
 
-class MessagesStream extends StatelessWidget {
-  final String uid;
-  final Function future;
-  final String friendUsername;
-
-  MessagesStream({Key key, this.uid, this.future, this.friendUsername});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<CollectionReference>(
-        future: future(),
-        builder: (context, snapshot) {
-          if (!(snapshot.connectionState == ConnectionState.done)) {
-            return Center(
-              child: CircularProgressIndicator(
-                backgroundColor: Colors.lightBlueAccent,
-              ),
-            );
-          }
-          return StreamBuilder<QuerySnapshot>(
-            stream: snapshot.data
-                .orderBy('timestamp', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return Center(
-                  child: CircularProgressIndicator(
-                    backgroundColor: Colors.lightBlueAccent,
-                  ),
-                );
-              }
-              return Expanded(
-                child: ListView.builder(
-                  reverse: true,
-                  itemBuilder: (context, index) {
-                    final m = snapshot.data.docs[index];
-                    final messageText = m.data()['text'];
-                    final sender = m.data()['sender'];
-                    final timestamp = m.data()['timestamp'];
-                    final currentUser = loggedInUser?.email;
-                    return MessageBubble(
-                      key: Key('$messageText$timestamp'),
-                      sender: sender,
-                      timestamp: timestamp,
-                      text: messageText,
-                      isMe: currentUser == sender,
-                    );
-                  },
-                  itemCount: snapshot.data.docs.length,
-                ),
-              );
-            },
-          );
-        });
-  }
-}
-
-class MessageBubble extends StatelessWidget {
-  final String sender, text;
-  final Timestamp timestamp;
-  final bool isMe;
-
-  MessageBubble({Key key, this.sender, this.text, this.timestamp, this.isMe})
-      : super(key: key);
-
-  Widget _buildOtherMessageBubble(context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          height: 60,
-          width: 60,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            color: _anotherColorcs,
-          ),
-          child: Text(
-            '${sender[0].toUpperCase()}',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 30.0,
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 10.0,
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width - 90),
-              child: Material(
-                borderRadius: BorderRadius.all(Radius.circular(20.0)),
-                color: Colors.white,
-                elevation: 2.0,
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 20.0,
-                      color: Color(0xff525C73),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(
-              height: 5.0,
-            ),
-            FutureBuilder<DateTime>(
-                future: _getTime(),
-                builder: (context, AsyncSnapshot<DateTime> snapshot) {
-                  if (snapshot.connectionState == ConnectionState.done) {
-                    int hours =
-                        snapshot.data.difference(timestamp.toDate()).inHours;
-                    int minutes =
-                        snapshot.data.difference(timestamp.toDate()).inMinutes;
-                    return Text(
-                      hours > 23
-                          ? '${DateFormat.MMMd().add_jm().format(timestamp.toDate())}'
-                          : hours > 0
-                              ? '${hours}h ago'
-                              : minutes > 0
-                                  ? '${minutes}m ago'
-                                  : 'Just now',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xff9DA5B4),
-                      ),
-                    );
-                  } else {
-                    return CircularProgressIndicator();
-                  }
-                }),
-          ],
-        ),
-      ],
+  SliverList buildSliverList(List<DocumentSnapshot> messages) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        return buildMessageBubble(messages[index]);
+      }, childCount: messages.length),
     );
   }
 
-  Widget _buildMeMessageBubble(context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width - 90),
-              child: Material(
-                borderRadius: BorderRadius.all(Radius.circular(20.0)),
-                color: Color(0xff1A233B),
-                elevation: 2.0,
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 20.0,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(
-              height: 5.0,
-            ),
-            FutureBuilder<DateTime>(
-                future: _getTime(),
-                builder: (context, AsyncSnapshot<DateTime> snapshot) {
-                  if (snapshot.connectionState == ConnectionState.done) {
-                    int hours =
-                        snapshot.data.difference(timestamp.toDate()).inHours;
-                    int minutes =
-                        snapshot.data.difference(timestamp.toDate()).inMinutes;
-                    return Text(
-                      hours > 23
-                          ? '${DateFormat.MMMd().add_jm().format(timestamp.toDate())}'
-                          : hours > 0
-                              ? '${hours}h ago'
-                              : minutes > 0
-                                  ? '${minutes}m ago'
-                                  : 'Just now',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xff9DA5B4),
-                      ),
-                    );
-                  } else {
-                    return CircularProgressIndicator();
-                  }
-                }),
-          ],
+  SliverAppBar buildSliverAppBar(BuildContext context) {
+    return SliverAppBar(
+      elevation: 2.0,
+      expandedHeight: 200.0,
+      pinned: true,
+      floating: true,
+      // centerTitle: true,
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back),
+        onPressed: () {
+          Navigator.pop(context);
+        },
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        title: Text(
+          widget.selectedUser.displayName,
         ),
-        SizedBox(
-          width: 10.0,
-        ),
-        Container(
-          height: 60,
-          width: 60,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            color: _meColorcs,
-          ),
-          child: Text(
-            '${sender[0].toUpperCase()}',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 30.0,
-            ),
-          ),
-        ),
-      ],
+        background: widget.selectedUser.photoUrl != null
+            ? Image.network(
+                widget.selectedUser.photoUrl,
+                fit: BoxFit.cover,
+              )
+            : Container(),
+      ),
+    );
+  }
+
+  MessageBubble buildMessageBubble(DocumentSnapshot doc) {
+    CustomUser sender;
+    String senderId = doc.data()['sender'];
+    if (senderId == loggedInUser.uid)
+      sender = CustomUser(
+          uid: senderId,
+          displayName: loggedInUser.displayName,
+          photoUrl: loggedInUser.photoURL,
+          email: loggedInUser.email);
+    else {
+      sender = widget.selectedUser;
+    }
+    Timestamp timestamp = doc.data()['timestamp'];
+    String message = doc.data()['text'];
+    AnimationController controller = AnimationController(
+      duration: Duration(milliseconds: 500),
+      vsync: this,
+    );
+    controller.forward();
+    return MessageBubble(
+      key: ValueKey('$message $timestamp'),
+      controller: controller,
+      sender: sender,
+      isMe: sender.uid == loggedInUser.uid,
+      timestamp: timestamp,
+      text: message,
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(10.0),
-      child: isMe
-          ? _buildMeMessageBubble(context)
-          : _buildOtherMessageBubble(context),
-    );
+  void dispose() {
+    subscription.cancel();
+    super.dispose();
   }
-}
-
-Future<DateTime> _getTime() async {
-  return await TrueTime.now();
 }

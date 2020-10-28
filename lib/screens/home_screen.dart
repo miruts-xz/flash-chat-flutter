@@ -2,41 +2,20 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flash_chat/%20models/custom_user.dart';
 import 'package:flash_chat/components/left_drawer.dart';
 import 'package:flash_chat/constants.dart';
 import 'package:flash_chat/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 
-final auth = FirebaseAuth.instance;
-final fs = FirebaseFirestore.instance;
-
 MaterialColor meColor;
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   static const String id = "home_screen";
-
-  @override
-  _HomeScreenState createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  User currentUser = auth.currentUser;
-  Stream<QuerySnapshot> chats = fs.collection('users').snapshots();
-  String currentUsername;
-
-  void _getCurrentUsername() async {
-    final docref = await fs.collection('users').doc('${currentUser.uid}').get();
-    String uname = docref.data()['name'];
-    setState(() {
-      currentUsername = uname;
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentUsername();
-  }
+  final auth = FirebaseAuth.instance;
+  final CollectionReference chats =
+      FirebaseFirestore.instance.collection('users');
+  final User currentUser = FirebaseAuth.instance.currentUser;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: StreamBuilder<QuerySnapshot>(
-            stream: chats,
+            stream: chats.snapshots(),
             builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
               if (!snapshot.hasData) {
                 return Center(
@@ -85,18 +64,19 @@ class _HomeScreenState extends State<HomeScreen> {
               chatFriends.remove(currentUser.uid);
               return ListView.separated(
                   itemBuilder: (context, index) {
-                    return FutureBuilder<String>(
-                      future: _getName(chatFriends[index]),
+                    return FutureBuilder<CustomUser>(
+                      future: _getUser(chatFriends[index]),
                       builder: (BuildContext context,
-                          AsyncSnapshot<String> snapshot) {
+                          AsyncSnapshot<CustomUser> snapshot) {
                         if (!(snapshot.connectionState ==
                             ConnectionState.done)) {
                           return Center(
-                            child: CircularProgressIndicator(),
+                            child: SizedBox.shrink(),
                           );
                         }
                         MaterialColor anotherColor = kAccountColors
                             .elementAt(Random().nextInt(kAccountColors.length));
+                        String photoUrl = snapshot.data.photoUrl;
                         return ListTile(
                           onTap: () {
                             Navigator.push(context,
@@ -104,28 +84,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               return ChatScreen(
                                   meColor: Colors.blue,
                                   anotherColor: anotherColor,
-                                  uid: chatFriends[index],
-                                  friendUsername: snapshot.data);
+                                  selectedUser: snapshot.data);
                             }));
                           },
-                          leading: Container(
-                            height: 50,
-                            width: 50,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(25),
-                              color: anotherColor,
-                            ),
-                            child: Text(
-                              '${snapshot.data[0].toUpperCase()}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 24.0,
-                              ),
-                            ),
-                          ),
+                          leading: CircleAvatar(
+                              radius: 25.0,
+                              backgroundColor:
+                                  photoUrl == null ? anotherColor : null,
+                              backgroundImage: photoUrl == null
+                                  ? null
+                                  : NetworkImage(photoUrl),
+                              child: photoUrl == null
+                                  ? Text(
+                                      '${snapshot.data.displayName[0].toUpperCase()}',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 30.0,
+                                      ),
+                                    )
+                                  : null),
                           title: Text(
-                            snapshot.data != null ? snapshot.data : "",
+                            snapshot.data.displayName ?? "",
                             style: TextStyle(
                               fontSize: 20.0,
                             ),
@@ -135,18 +114,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                   separatorBuilder: (context, index) {
-                    return Divider();
+                    return snapshot.hasData ? Divider() : Container();
                   },
                   itemCount: chatFriends.length);
             }),
       ),
-      drawer: LeftDrawerWidget(user: currentUsername),
+      drawer: LeftDrawerWidget(),
     );
   }
 
-  Future<String> _getName(String id) async {
+  Future<CustomUser> _getUser(String id) async {
     DocumentSnapshot doc = await fs.collection('users').doc('$id').get();
-    String name = doc.data()['name'];
-    return name;
+    return CustomUser.fromJson(doc.data());
   }
 }

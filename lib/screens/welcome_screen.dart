@@ -101,12 +101,3 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     );
   }
 }
-
-class NewWidget extends StatelessWidget {
-  const NewWidget({
-    Key key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {}
-}
