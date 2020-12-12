@@ -2,8 +2,11 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart' as storage;
+import 'package:flash_chat/models/custom_user.dart';
+import 'package:flash_chat/components/profile_details.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -55,8 +58,8 @@ class _LeftDrawerWidgetState extends State<LeftDrawerWidget> {
             onDetailsPressed: () {},
             currentAccountPicture: GestureDetector(
               onTap: () async {
-                await _getImageGallery();
-                if (_image != null) {
+                if (loggedInUser.photoURL == null && _image != null) {
+                  await _getImageGallery();
                   String type =
                       _image.path.substring(_image.path.lastIndexOf('.'));
                   storage.StorageReference ref = firebaseStorage
@@ -96,12 +99,35 @@ class _LeftDrawerWidgetState extends State<LeftDrawerWidget> {
                       });
                     }
                   });
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProfileDetails(
+                        selectedUser: CustomUser(
+                            uid: loggedInUser.uid,
+                            displayName: loggedInUser.displayName,
+                            photoUrl: loggedInUser.photoURL,
+                            email: loggedInUser.email),
+                      ),
+                    ),
+                  );
                 }
               },
               child: photoUrl != null
-                  ? CircleAvatar(
-                      radius: 35.0,
-                      backgroundImage: NetworkImage(photoUrl),
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(35.0),
+                      child: Container(
+                        height: 70.0,
+                        child: Hero(
+                          tag: 'profile_pic',
+                          child: ExtendedImage.network(
+                            photoUrl,
+                            fit: BoxFit.cover,
+                            cache: true,
+                          ),
+                        ),
+                      ),
                     )
                   : CircleAvatar(
                       radius: 35.0,
@@ -116,6 +142,27 @@ class _LeftDrawerWidgetState extends State<LeftDrawerWidget> {
                               size: 32.0,
                             ),
                     ),
+              /*photoUrl != null
+                  ? CircleAvatar(
+                      radius: 35.0,
+                      backgroundImage: ExtendedNetworkImageProvider(
+                        photoUrl,
+                        cache: true,
+                      ),
+                    )
+                  : CircleAvatar(
+                      radius: 35.0,
+                      backgroundColor: Colors.white,
+                      child: _isLoading
+                          ? CircularProgressIndicator(
+                              backgroundColor: Colors.white,
+                            )
+                          : Icon(
+                              Icons.add_a_photo,
+                              color: Colors.lightBlueAccent,
+                              size: 32.0,
+                            ),
+                    ),*/
             ),
             accountName: Text(
               loggedInUser.displayName ?? "",

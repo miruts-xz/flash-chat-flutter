@@ -1,5 +1,6 @@
-class LoggedInUserData {
-  final  loggedInUser;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 
-  LoggedInUserData({this.loggedInUser});
+class LoggedInUserData extends ChangeNotifier {
+  final loggedInUser = FirebaseAuth.instance.currentUser;
 }
