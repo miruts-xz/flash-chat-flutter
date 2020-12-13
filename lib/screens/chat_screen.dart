@@ -1,17 +1,14 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flash_chat/%20models/custom_user.dart';
-import 'package:flash_chat/components/custom_sliver_appbar.dart';
-import 'package:flash_chat/components/custom_sliver_list.dart';
+import 'package:flash_chat/models/custom_user.dart';
+import 'package:flash_chat/models/text_message.dart';
 import 'package:flash_chat/components/message_bubble.dart';
 import 'package:flash_chat/components/message_composer.dart';
-import 'package:flash_chat/constants.dart';
+import 'package:flash_chat/components/profile_details.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:intl/intl.dart';
 import 'package:true_time/true_time.dart';
 
 final fs = FirebaseFirestore.instance;
@@ -35,18 +32,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   TextEditingController messageTextController = TextEditingController();
   CollectionReference chatMessages;
   final loggedInUser = auth.currentUser;
-  List<DocumentSnapshot> messages = [];
-  List<DocumentSnapshot> reversedList = [];
-  final ScrollController scrollController = ScrollController();
-  StreamSubscription<QuerySnapshot> subscription;
+  List<TextMessage> messages = [];
+
+  GlobalKey<AnimatedListState> _listKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _initPlatformState();
+    WidgetsBinding.instance.addPostFrameCallback(initiateConnection);
     _getChatMessages();
     _anotherColorcs = widget.anotherColor;
     _meColorcs = widget.meColor;
+  }
+
+  void initiateConnection(Duration dur) {
+    var subscription = chatMessages.orderBy('timestamp').snapshots();
+    subscription.listen(handleDocChanges);
+  }
+
+  void handleDocChanges(QuerySnapshot snapshot) {
+    Future ft = Future(() {});
+    snapshot.docChanges.forEach((DocumentChange docChange) {
+      ft = ft.then((value) {
+        Future.delayed(Duration(milliseconds: 300), () {
+          TextMessage message = TextMessage.fromDoc(docChange.doc);
+          if (messages.length == 0) {
+            messages.add(message);
+            _listKey.currentState.insertItem(messages.length - 1);
+          } else {
+            messages.insert(0, message);
+            _listKey.currentState.insertItem(0);
+          }
+        });
+      });
+    });
   }
 
   void _initPlatformState() async {
@@ -57,40 +77,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return await TrueTime.now();
   }
 
-  Future<void> _getChatMessages() async {
-    final friendChats = await fs
-        .collection('messages')
-        .doc('${widget.selectedUser.uid}')
-        .collection('${auth.currentUser.uid}')
-        .doc('chats')
-        .collection('chats')
-        .get();
-    if (friendChats.size > 0) {
-      chatMessages = fs
-          .collection('messages')
-          .doc(widget.selectedUser.uid)
-          .collection(loggedInUser.uid)
-          .doc('chats')
-          .collection('chats');
-    } else {
-      chatMessages = fs
-          .collection('messages')
-          .doc(loggedInUser.uid)
-          .collection('${widget.selectedUser.uid}')
-          .doc('chats')
-          .collection('chats');
-    }
-    subscription =
-        chatMessages.orderBy('timestamp').snapshots().listen(queryHandler);
-  }
+  void _getChatMessages() {
+    int cmp = auth.currentUser.uid.compareTo(widget.selectedUser.uid);
+    bool mineGreater = cmp == 1;
 
-  void queryHandler(QuerySnapshot snapshot) {
-    snapshot.docChanges.forEach((element) {
-      messages.add(element.doc);
-    });
-    setState(() {
-      reversedList = messages.reversed.toList();
-    });
+    chatMessages = mineGreater
+        ? fs
+            .collection('messages')
+            .doc('${widget.selectedUser.uid}_${auth.currentUser.uid}')
+            .collection('chats')
+        : fs
+            .collection('messages')
+            .doc('${auth.currentUser.uid}_${widget.selectedUser.uid}')
+            .collection('chats');
   }
 
   void _onSendCallback(String message) async {
@@ -105,80 +104,88 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xffF3F6FB),
-      body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: NestedScrollView(
-                controller: scrollController,
-                floatHeaderSlivers: true,
-                headerSliverBuilder: (context, scroll) {
-                  return [buildSliverAppBar(context)];
-                },
-                body: ListView.builder(
-                  itemBuilder: (context, index) {
-                    return buildMessageBubble(reversedList[index]);
-                  },
-                  itemCount: reversedList.length,
-                  // reverse: true,
+      appBar: AppBar(
+        leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.pop(context);
+            }),
+        title: GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => ProfileDetails(
+                        selectedUser: widget.selectedUser,
+                      )),
+            );
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(25.0),
+                child: Container(
+                  height: 50,
+                  width: 50,
+                  child: Hero(
+                    tag: 'profile_pic',
+                    child: widget.selectedUser.photoUrl != null ? ExtendedImage.network(
+                      widget.selectedUser.photoUrl,
+                      fit: BoxFit.cover,
+                      cache: true,
+                    ) : Image.asset('images/profile.jpg', fit: BoxFit.cover,),
+                  ),
                 ),
               ),
+              SizedBox(width: 10),
+              Text(widget.selectedUser.displayName),
+            ],
+          ),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {},
+            icon: Icon(Icons.more_vert),
+          ),
+        ],
+      ),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: AnimatedList(
+              reverse: true,
+              key: _listKey,
+              initialItemCount: messages.length,
+              itemBuilder: (context, index, animation) {
+                TextMessage message = messages[index];
+                return SizeTransition(
+                  sizeFactor: animation,
+                  axisAlignment: 0.0,
+                  axis: Axis.vertical,
+                  child: MessageBubble(
+                    isMe: message.senderId == auth.currentUser.uid,
+                    message: message,
+                    meColorcs: _meColorcs,
+                  ),
+                );
+              },
             ),
-/*            Expanded(
-              child: Container(
-                child: CustomScrollView(
-                  controller: scrollController,
-                  slivers: [
-                    buildSliverAppBar(context),
-                    buildSliverList(messages),
-                  ],
-                ),
-              ),
-            )*/
-            MessageComposer(onSendPressed: _onSendCallback),
-          ],
-        ),
+          ),
+          MessageComposer(onSendPressed: _onSendCallback),
+        ],
       ),
     );
   }
 
-  SliverList buildSliverList(List<DocumentSnapshot> messages) {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        return buildMessageBubble(messages[index]);
-      }, childCount: messages.length),
-    );
+  @override
+  void dispose() {
+    // TODO: implement dispose
+    super.dispose();
   }
-
-  SliverAppBar buildSliverAppBar(BuildContext context) {
-    return SliverAppBar(
-      elevation: 2.0,
-      expandedHeight: 200.0,
-      pinned: true,
-      floating: true,
-      // centerTitle: true,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back),
-        onPressed: () {
-          Navigator.pop(context);
-        },
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        title: Text(
-          widget.selectedUser.displayName,
-        ),
-        background: widget.selectedUser.photoUrl != null
-            ? Image.network(
-                widget.selectedUser.photoUrl,
-                fit: BoxFit.cover,
-              )
-            : Container(),
-      ),
-    );
-  }
-
+/*
   MessageBubble buildMessageBubble(DocumentSnapshot doc) {
     CustomUser sender;
     String senderId = doc.data()['sender'];
@@ -200,17 +207,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     controller.forward();
     return MessageBubble(
       key: ValueKey('$message $timestamp'),
-      controller: controller,
-      sender: sender,
       isMe: sender.uid == loggedInUser.uid,
       timestamp: timestamp,
-      text: message,
     );
   }
-
-  @override
-  void dispose() {
-    subscription.cancel();
-    super.dispose();
-  }
+*/
 }

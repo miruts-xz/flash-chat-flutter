@@ -1,5 +1,6 @@
 import 'package:flash_chat/constants.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class MessageComposer extends StatefulWidget {
   final Function onSendPressed;
@@ -42,6 +43,9 @@ class _MessageComposerState extends State<MessageComposer> {
                   ? () async {
                       widget.onSendPressed(messageTextController.text);
                       messageTextController.clear();
+                      setState(() {
+                        _isComposing = false;
+                      });
                     }
                   : null),
         ],

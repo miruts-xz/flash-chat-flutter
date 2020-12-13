@@ -1,3 +1,4 @@
+/*
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flash_chat/%20models/custom_user.dart';
 import 'package:flutter/material.dart';
@@ -35,3 +36,4 @@ class CustomAppBar extends RenderSliver {
   void performLayout() {
   }
 }
+*/
